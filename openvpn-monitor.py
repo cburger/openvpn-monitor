@@ -748,7 +748,8 @@ if __name__ == '__main__':
     image_path = 'images/'
     main()
 else:
-    from bottle import response, request, get, post, static_file, default_app
+    from bottle import response, request, get, post, static_file, default_app, route, redirect
+
 
     class args(object):
         debug = False
@@ -769,11 +770,15 @@ else:
 
     application = default_app()
 
-    @get('/')
+    @route('/')
+    def get_root():
+        redirect('/openvpn/')
+
+    @get('/openvpn/')
     def get_slash():
         return render()
 
-    @post('/')
+    @post('/openvpn/')
     def post_slash():
         vpn_id = request.forms.get('vpn_id')
         ip = request.forms.get('ip')
@@ -788,6 +793,6 @@ else:
         response.content_type = 'text/html;'
         return wsgi_output
 
-    @get('/<filename:re:.*\.(jpg|png)>')
+    @get('/openvpn/<filename:re:.*\.(jpg|png)>')
     def images(filename):
         return static_file(filename, root=images_dir)
