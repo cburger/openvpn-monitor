@@ -1,9 +1,9 @@
-# OpenVPN-Monitor
+# openvpn-monitor
 
 
 ## Summary
 
-OpenVPN-Monitor is a simple python program to generate html that displays the
+openvpn-monitor is a simple python program to generate html that displays the
 status of an OpenVPN server, including all current connections. It uses the
 OpenVPN management console. It typically runs on the same host as the OpenVPN
 server, however it does not necessarily need to.
@@ -18,57 +18,150 @@ The current source code is available on github:
 https://github.com/furlongm/openvpn-monitor
 
 
-## Installation with virtualenv + pip + gunicorn
+## Install Options
+  - [virtualenv + pip + gunicorn](#virtualenv--pip--gunicorn)
+  - [apache](#apache)
+  - [docker](#docker)
+  - [nginx + uwsgi](#nginx--uwsgi)
+  - [deb/rpm](#deb--rpm)
 
-N.B libgeoip-dev should also be installed using yum/apt-get
+N.B. all CentOS/RHEL instructions assume the EPEL repository has been installed:
 
 ```shell
+yum install -y epel-release
+
+```
+
+### virtualenv + pip + gunicorn
+
+```shell
+# apt-get install python-virtualenv geoip-database-extra geoipupdate      # (debian/ubuntu)
+# yum install python-virtualenv GeoIP-update geolite2-city python2-geoip2 # (centos/rhel)
 mkdir /srv/openvpn-monitor
 cd /srv/openvpn-monitor
 virtualenv .
 . bin/activate
+pip install --upgrade pip
 pip install openvpn-monitor gunicorn
 gunicorn openvpn-monitor -b 0.0.0.0:80
 ```
 
-## Installation with Docker
+See [configuration](#configuration) for details on configuring openvpn-monitor.
+
+
+### apache
+
+#### Install dependencies and configure apache
+
+##### Debian / Ubuntu
 
 ```shell
-docker run -p 80:80 ruimarinho/openvpn-monitor
-```
-
-Read the [docker installation instructions](https://github.com/ruimarinho/docker-openvpn-monitor#usage) for details on how to generate a dynamic configuration using only environment variables.
-
-
-## Standard Installation
-
-### Install dependencies and configure apache
-
-#### Debian / Ubuntu
-
-```shell
-apt-get -y install python-geoip python-ipaddr python-humanize python-bottle python-semantic-version apache2 libapache2-mod-wsgi git wget
+apt-get -y install git apache2 libapache2-mod-wsgi python-geoip2 python-ipaddr python-humanize python-bottle python-semantic-version geoip-database-extra geoipupdate
 echo "WSGIScriptAlias /openvpn-monitor /var/www/html/openvpn-monitor/openvpn-monitor.py" > /etc/apache2/conf-available/openvpn-monitor.conf
 a2enconf openvpn-monitor
 systemctl restart apache2
 ```
 
-#### CentOS
+##### CentOS / RHEL
 
 ```shell
-yum install -y epel-release
-yum install -y python-GeoIP python-ipaddr python-humanize python-bottle python-semantic_version httpd mod_wsgi git wget
+yum install -y git httpd mod_wsgi python2-geoip2 python-ipaddr python-humanize python-bottle python-semantic_version geolite2-city GeoIP-update
 echo "WSGIScriptAlias /openvpn-monitor /var/www/html/openvpn-monitor/openvpn-monitor.py" > /etc/httpd/conf.d/openvpn-monitor.conf
 systemctl restart httpd
 ```
 
-### Checkout OpenVPN-Monitor
+#### Checkout openvpn-monitor
 
 ```shell
 cd /var/www/html
 git clone https://github.com/furlongm/openvpn-monitor.git
 ```
 
+See [configuration](#configuration) for details on configuring openvpn-monitor.
+
+
+### docker
+
+```shell
+docker run -p 80:80 ruimarinho/openvpn-monitor
+```
+
+Read the [docker installation instructions](https://github.com/ruimarinho/docker-openvpn-monitor#usage)
+for details on how to generate a dynamic configuration using only environment
+variables.
+
+
+### nginx + uwsgi
+
+#### Install dependencies
+
+```shell
+# apt-get install gcc libgeoip-dev python-virtualenv python-dev geoip-database-extra nginx uwsgi uwsgi-plugin-python geoipupdate                  # (debian/ubuntu)
+# yum install gcc geoip-devel python-virtualenv python-devel GeoIP-data GeoIP-update nginx uwsgi uwsgi-plugin-python geolite2-city python2-geoip2 # (centos/rhel)
+```
+
+#### Checkout openvpn-monitor
+
+```shell
+cd /srv
+git clone https://github.com/furlongm/openvpn-monitor.git
+cd openvpn-monitor
+virtualenv .
+. bin/activate
+pip install -r requirements.txt
+```
+
+#### uWSGI app config
+
+Create a uWSGI config in `/etc/uwsgi/apps-available/openvpn-monitor.ini`
+
+```
+[uwsgi]
+base = /srv
+project = openvpn-monitor
+logto = /var/log/uwsgi/app/%(project).log
+plugins = python
+chdir = %(base)/%(project)
+virtualenv = %(chdir)
+module = openvpn-monitor:application
+manage-script-name = true
+mount=/openvpn-monitor=openvpn-monitor.py
+```
+
+#### Nginx site config
+
+Create an Nginx config in `/etc/nginx/sites-available/openvpn-monitor`
+
+```
+server {
+    listen 80;
+    location /openvpn-monitor/ {
+        uwsgi_pass unix:///run/uwsgi/app/openvpn-monitor/socket;
+        include uwsgi_params;
+    }
+}
+```
+
+#### Enable uWSGI app and Nginx site, and restart services
+
+```shell
+ln -s /etc/uwsgi/apps-available/openvpn-monitor.ini /etc/uwsgi/apps-enabled/
+service uwsgi restart
+ln -s /etc/nginx/sites-available/openvpn-monitor /etc/nginx/sites-enabled/
+service nginx reload
+```
+
+See [configuration](#configuration) for details on configuring openvpn-monitor.
+
+
+
+### deb / rpm
+
+```shell
+TBD
+```
+
+## Configuration
 
 ### Configure OpenVPN
 
@@ -83,31 +176,27 @@ Refer to the OpenVPN documentation for further information on how to secure
 access to the management interface.
 
 
-### Download the GeoLite City database
+### Configure openvpn-monitor
+
+Copy the example configuration file `openvpn-monitor.conf.example` to the same
+directory as openvpn-monitor.py.
 
 ```shell
-cd /usr/share/GeoIP/
-wget http://geolite.maxmind.com/download/geoip/database/GeoLiteCity.dat.gz
-gunzip GeoLiteCity.dat.gz
-mv GeoLiteCity.dat GeoIPCity.dat
+cp openvpn-monitor.conf.example openvpn-monitor.conf
+
 ```
 
+In this file you can set site name, add a logo, set the default map location
+(latitude and longitude). If not set, the default location is New York, USA.
 
-### Configure OpenVPN-Monitor
+Once configured, navigate to `http://myipaddress/openvpn-monitor/`
 
-The example configuration file `/var/www/html/openvpn-monitor/openvpn-monitor.conf`
-should give some indication of how to set site name, add a logo, etc. You can
-also set a default location (latitude and longitude) for the embedded maps.
-If not set, the default location is Melbourne, Australia.
-
-Edit `/var/www/html/openvpn-monitor/openvpn-monitor.conf` to match your site.
-
-You should now be able to navigate to `http://myipaddress/openvpn-monitor`
+Note the trailing slash, the images may not appear without it.
 
 
 ### Debugging
 
-OpenVPN-Monitor can be run from the command line in order to test if the html
+openvpn-monitor can be run from the command line in order to test if the html
 generates correctly:
 
 ```shell
@@ -125,7 +214,7 @@ python openvpn-monitor.py -d
 
 ## License
 
-OpenVPN-Monitor is licensed under the GPLv3, a copy of which can be found in
+openvpn-monitor is licensed under the GPLv3, a copy of which can be found in
 the COPYING file.
 
 
